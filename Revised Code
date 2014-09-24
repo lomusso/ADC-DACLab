@@ -1,0 +1,222 @@
+/*****
+
+BME 464 Arduino ADC/DAC Lab
+Kirsty, Lauren, Claire, Elena
+DUE: 9/17/14
+
+*****/
+
+// include the library code:
+#include <Wire.h>
+#include <Adafruit_MCP23017.h>
+#include <Adafruit_RGBLCDShield.h>
+
+// The shield uses the I2C SCL and SDA pins. On classic Arduinos
+// this is Analog 4 and 5 so you can't use those for analogRead() anymore
+// However, you can connect other I2C sensors to the I2C bus and share
+// the I2C bus.
+Adafruit_RGBLCDShield lcd = Adafruit_RGBLCDShield();
+
+//// These #defines make it easy to set the backlight color
+#define RED 0x1
+#define YELLOW 0x3
+#define GREEN 0x2
+#define TEAL 0x6
+#define BLUE 0x4
+#define VIOLET 0x5
+#define WHITE 0x7
+
+//**************************VARIABLES***********************//
+int pinIN = A1; // pin that reads in analog signal
+int pinOUT = 9; // pin that writes analog value for output signal
+float voltageIN; // input signal (0-5 V)
+float original_signal; // original input signal (before hardware)
+int analogOUT; // analog value of input signal for digitalWrite
+int bin_vals[] = {0, 0, 0}; // convert signal to binary number with 3 bits
+int t_start; // keeps track of time
+int t_now; // keeps track of time
+boolean not_printing = true; // keeps track of time and updating the screen every second
+boolean negative_voltage = false; // keeps track of whether signal is positive or negative
+
+// User sets the voltages boundaries for the actual signal.
+int signal_high = 5; // highest value of input signal
+int signal_low = -5; // lowest value of input signal
+int signal_range = abs(signal_high - signal_low); // range of the input signal - necessary for later calculations
+
+
+
+
+//************************SETUPLOOP*********************//
+void setup (){
+  // Debugging output.  Begin communication with computer.
+  Serial.begin(9600);
+  // Set up for LCD shield
+  lcd.begin(16,2);
+  lcd.setBacklight(VIOLET);
+  // Initialize pins as input/output
+  pinMode(pinIN, INPUT);
+  pinMode(pinOUT, OUTPUT);  
+  lcd.setCursor(0,0);
+  lcd.print("Output Voltage:");
+  lcd.setCursor(5,1);
+  lcd.print("Volts");
+}
+
+
+
+//**********************MAINLOOP************************//
+void loop(){
+  // Calculate time at beginning of each loop.
+  t_start = millis(); 
+  while (not_printing == true){
+    // Map analog voltage (0-1023) to digitial voltage (0-5 V).
+    voltageIN = MapInputSignal();
+    // Map digital voltage (0-5 V) to analog voltage (0-255).
+    analogOUT = MapSignalOut(voltageIN);
+    // Write analog voltage to output pin.
+    WriteOutputSignal(analogOUT);
+    // Shift and scale digital voltage (0-5 V) to original voltage (-5-5 V).
+    original_signal = ShiftandScale(voltageIN, signal_range, (signal_range/2));
+    // Convert original signal from decimal to binary using 3 bits, precision to the ones place.
+    bin_vals[0] = LeftBitValue(original_signal);
+    bin_vals[1] = MidBitValue(original_signal);
+    bin_vals[2] = RightBitValue(original_signal);
+    // Calculate time now.
+    t_now = millis();
+    // Has it been one second?  If it has, we will get kicked out of loop to print to lcd.
+    not_printing = CheckTime(t_now, t_start);       
+  }
+  // Check whether the signal is positive or negative for printing to the lcd.
+  negative_voltage = CheckSignofSignal(original_signal);
+  // Print positive or negative sign to lcd.
+  PrintSign(negative_voltage);
+  // Print binary value to lcd.
+  PrintBinary(bin_vals);
+  // Reset not_printing boolean so we can go back into loop that reads in signal and writes out signal.
+  not_printing = true;  
+}
+
+
+
+
+
+
+
+
+
+//************************FUNCTIONS*************************//
+
+// Function for mapping analog values (0-1023) to voltage values (0-5)
+float MapInputSignal(){
+  float x = (analogRead(pinIN))*(5.0/1023.0);
+  return x;
+}
+
+// Function for shifting and scaling mapped voltage to actual input signal
+float ShiftandScale(float a,int b,float c){
+  float x = ((a*(b/5)) - c); 
+  return x;
+}
+
+// Function for mapping voltage to analog values (0-255) for digitalWrite
+int MapSignalOut(int a){
+  int x = round(a*(255/5));
+  return x;
+}
+
+// Function for writing analog voltage to output
+void WriteOutputSignal(int a){
+  analogWrite(pinOUT,a);
+}
+
+// Function for determining leftmost bit or first value in bin
+int LeftBitValue(int a){
+  int x;
+  if (abs(round(a)) < 3.5){ // corresponds to V = +/-0-3V, MSB of binary value is always 0
+     x = 0;
+   }
+  if (abs(round(a)) >= 3.5){ // corresponds to V = +/-4-5V, MSB of binary value is always 1
+     x = 1;
+   }
+  return x;
+} 
+
+// Funciton for determining 2nd bit or middle value in bin
+int MidBitValue(int a){
+  int x;
+  if ((abs(round(a)) < 1.5) || (abs(round(a)) >= 3.5)){ // corresponds to V = +/- 0,1,4,5V
+     x = 0;
+  }
+   if ((abs(round(a)) >= 1.5) && (abs(round(a)) < 3.5)){ // corresponds to V = +/- 2,3V
+     x = 1;
+   }
+   return x;
+}
+
+// Function for determining least significant order bit or rightmost value in bin
+int RightBitValue(int a){
+  int x;
+  if ((abs(round(a)) < .5) || ((abs(round(a)) >= 1.5) && (abs(round(a)) < 2.5)) || ((abs(round(a)) >= 3.5) && (abs(round(a)) < 4.5))){
+     x = 0;
+  }
+   if (((abs(round(a)) >= .5) && (abs(round(a)) < 1.5)) || ((abs(round(a)) >= 2.5) && (abs(round(a)) < 3.5)) || (abs(round(a)) >= 4.5)){
+     x = 1;
+   }
+   return x;
+}
+
+// Function for checking whether one second has passed or not
+boolean CheckTime(int a, int b){
+  boolean x;
+  if (a >= (b+1000)){
+    x = false;
+  }
+  return x;
+}
+
+// Function to check if orignal signal is positive or negative (for printing to lcd)
+boolean CheckSignofSignal(float a){
+  boolean x;
+  if (round(a) < 0){
+    x = true;
+  }
+  if (round(a) >= 0){
+    x = false;
+  }
+  return x;
+}
+
+// Function that prints positive or minus sign to lcd
+void PrintSign(boolean a){
+  lcd.setCursor(0,1); 
+  if(a==true){
+    lcd.print('-'); 
+  }  
+  if(a==false){
+    lcd.print('+');
+  }
+}
+
+void PrintBinary(int a[]){
+  lcd.setCursor(1,1);
+  for (int i=0; i <= 2; i++){
+  lcd.print(a[i]);
+  lcd.setCursor(i+2,1);
+  }
+}
+  
+  
+
+ 
+
+ 
+  
+  
+
+
+
+  
+    
+  
+  
+  
